@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/valyu-network-valyu-mcp-badge.png)](https://mseep.ai/app/valyu-network-valyu-mcp)
+
 # Valyu MCP Server
 
 The Valyu MCP Server is a Model Context Protocol (MCP) tool that enables AI models to retrieve high-quality context from Valyu's API, including full search capabilities over Wikipedia, arXiv papers (great for finance, research, etc.), and web search.
