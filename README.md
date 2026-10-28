@@ -120,6 +120,36 @@ python valyu-mcp.py
    - Look for the `valyu-mcp` tool in the Claude interface.
    - Test a query in Claude (e.g., _"What are the latest papers on reinforcement learning?")_.
 
+## Docker and Glama
+
+Build the stdio server image:
+
+```bash
+docker build -t valyu-mcp .
+```
+
+To enable search, set `VALYU_API_KEY` in your environment and pass it to the container without putting the key in the command or image:
+
+```bash
+docker run --rm -i -e VALYU_API_KEY valyu-mcp
+```
+
+The server can start and respond to MCP initialization and tool-discovery requests without an API key. Search remains disabled until a key is configured; this permits deployment evaluators to inspect the server without making billable requests. Missing credentials and failed API responses produce MCP tool errors, not successful empty search results. Successful searches with no matches return `No results found.`
+
+For the [Glama listing](https://glama.ai/mcp/servers/valyuAI/valyu-mcp/admin), the accounts named in `glama.json` can sign in with GitHub and claim the listing after the configuration has been merged and synced. Upload this Dockerfile in Glama's build configuration and request a build and evaluation. If searches are needed, configure `VALYU_API_KEY` through the deployment's secret settings, never in the Dockerfile or build arguments.
+
+Run the regression tests for startup, MCP tool errors, SDK requests with mocked HTTP, result formatting, result-count limits, and non-blocking execution:
+
+```bash
+python -m unittest -v test_glama_startup
+```
+
+After building the image, include the network-isolated container test:
+
+```bash
+VALYU_MCP_TEST_IMAGE=valyu-mcp python -m unittest -v test_glama_startup
+```
+
 ## Testing and Debugging
 
 Check logs if you encounter issues:
