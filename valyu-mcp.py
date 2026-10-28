@@ -30,12 +30,11 @@ async def make_valyu_request(
         logger.info(
             f"Making Valyu request - query: {query}, max_results: {max_num_results}, max_price: {max_price}"
         )
-        response = valyu.context(
+        response = valyu.search(
             query=query,
             search_type="all",
             max_num_results=max_num_results,
             max_price=max_price,
-            query_rewrite=False,
         )
         logger.info(f"Received Valyu response: {response}")
         return response
@@ -87,6 +86,9 @@ async def valyu_context(query: str, max_num_results: int = 10) -> str:
     Returns:
     - str: Formatted search results including titles, content, and source URLs.
     """
+    if valyu is None:
+        return "Search requires VALYU_API_KEY. Configure it in the server environment and restart the server."
+
     logger.info(
         f"Starting valyu_context tool call - query: {query}, max_results: {max_num_results}"
     )
@@ -113,13 +115,12 @@ if __name__ == "__main__":
     import os
 
     VALYU_API_KEY = os.getenv("VALYU_API_KEY")
-    if not VALYU_API_KEY:
-        logger.error("Error: VALYU_API_KEY environment variable is required")
-        exit(1)
-
     try:
-        valyu = Valyu(api_key=VALYU_API_KEY)
-        logger.info("Server initialized successfully with Valyu API key")
+        if VALYU_API_KEY:
+            valyu = Valyu(api_key=VALYU_API_KEY)
+            logger.info("Server initialized successfully")
+        else:
+            logger.warning("VALYU_API_KEY is not configured; search is disabled")
 
         # Initialize and run the server using stdio transport
         mcp.run(transport="stdio")

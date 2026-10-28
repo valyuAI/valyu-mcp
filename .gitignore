@@ -1,7 +1,11 @@
 venv/
-.venv/
+.venv*/
 pyvenv.cfg
 __pycache__/
 .DS_Store
-.env
+.env*
+*.pem
+*.key
+credentials.*
+secrets.*
 test.py
