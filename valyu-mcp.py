@@ -1,7 +1,11 @@
-from typing import Any, Optional
-from valyu import Valyu, SearchResponse
-from mcp.server.fastmcp import FastMCP
+import asyncio
+import json
 import logging
+from typing import Optional
+
+from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
+from valyu import SearchResponse, Valyu
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", force=True
@@ -9,38 +13,50 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("valyu-mcp")
-valyu = None
+valyu: Optional[Valyu] = None
 
 
 async def make_valyu_request(
-    query: str, max_num_results: int = 10, max_price: int = 10
-) -> Optional[SearchResponse]:
+    query: str, max_num_results: int = 5, max_price: int = 10
+) -> SearchResponse:
     """
     Initiates a request to the Valyu API, incorporating error handling and logging for debugging purposes.
 
     Parameters:
     - query (str): The search query to be sent to the Valyu API.
-    - max_num_results (int, optional): The maximum number of results to be returned. Defaults to 10.
+    - max_num_results (int, optional): The maximum number of results to be returned. Defaults to 5.
     - max_price (int, optional): The maximum price for the results. Defaults to 10.
 
     Returns:
-    - Optional[SearchResponse]: The response received from the Valyu API or None if an error occurs.
+    - SearchResponse: A successful response from the Valyu API. Failures raise ToolError.
     """
-    try:
-        logger.info(
-            f"Making Valyu request - query: {query}, max_results: {max_num_results}, max_price: {max_price}"
+    if valyu is None:
+        raise ToolError(
+            "Search requires VALYU_API_KEY. Configure it in the server environment "
+            "and restart the server."
         )
-        response = valyu.search(
+
+    try:
+        response = await asyncio.to_thread(
+            valyu.search,
             query=query,
             search_type="all",
             max_num_results=max_num_results,
             max_price=max_price,
         )
-        logger.info(f"Received Valyu response: {response}")
-        return response
     except Exception as e:
-        logger.error(f"Error making Valyu request: {str(e)}")
-        return None
+        logger.error("Valyu request failed (%s)", type(e).__name__)
+        raise ToolError(
+            "Valyu search failed. Check service availability and try again."
+        ) from None
+
+    if response is None or not response.success:
+        logger.warning("Valyu search returned an unsuccessful response")
+        raise ToolError(
+            "Valyu search failed. Check your API key, account balance, source access, "
+            "and service availability."
+        )
+    return response
 
 
 def format_valyu_results(data: SearchResponse) -> str:
@@ -57,10 +73,15 @@ def format_valyu_results(data: SearchResponse) -> str:
         return "No results found."
 
     results = []
-    for i, result in enumerate(data.results, 1):
+    for result in data.results:
+        content = result.content
+        if isinstance(content, (dict, list)):
+            content = json.dumps(content, ensure_ascii=False)
+        else:
+            content = content or result.description or ""
         results.append(
             f"""Title: {result.title}
-Content: {result.content or result.description}
+Content: {content}
 URL: {result.url}"""
         )
 
@@ -69,7 +90,7 @@ URL: {result.url}"""
 
 
 @mcp.tool()
-async def valyu_context(query: str, max_num_results: int = 10) -> str:
+async def valyu_context(query: str, max_num_results: int = 5) -> str:
     """
     A powerful search tool that provides relevant, up-to-date information from across the web and proprietary data sources.
     Use this tool whenever you need to:
@@ -81,34 +102,18 @@ async def valyu_context(query: str, max_num_results: int = 10) -> str:
 
     Parameters:
     - query (str): The search query. Be specific and detailed in your query for best results.
-    - max_num_results (int, optional): Maximum number of results to return (default: 10, max: 5)
+    - max_num_results (int, optional): Maximum number of results to return (default: 5, clamped to 1-5).
 
     Returns:
     - str: Formatted search results including titles, content, and source URLs.
     """
-    if valyu is None:
-        return "Search requires VALYU_API_KEY. Configure it in the server environment and restart the server."
+    if not query.strip():
+        raise ToolError("The search query must not be empty.")
 
-    logger.info(
-        f"Starting valyu_context tool call - query: {query}, max_results: {max_num_results}"
-    )
-
-    try:
-        # Ensure count is within bounds but keep it smaller for faster responses
-        max_num_results = min(max(1, max_num_results), 5)  # Reduced from 20 to 5
-
-        data = await make_valyu_request(query, max_num_results, 10)
-        if not data:
-            logger.error("Failed to get Valyu response")
-            return f"Unable to fetch context from Valyu 🫠 Skill issue."
-
-        formatted_results = format_valyu_results(data)
-        logger.info(f"Successfully formatted {len(data.results)} results")
-        return formatted_results
-
-    except Exception as e:
-        logger.error(f"Error in valyu_context: {str(e)}")
-        return f"Error executing valyu_context: {str(e)}"
+    max_num_results = min(max(1, max_num_results), 5)
+    data = await make_valyu_request(query, max_num_results, 10)
+    logger.info("Valyu search returned %d results", len(data.results))
+    return format_valyu_results(data)
 
 
 if __name__ == "__main__":
@@ -125,5 +130,5 @@ if __name__ == "__main__":
         # Initialize and run the server using stdio transport
         mcp.run(transport="stdio")
     except Exception as e:
-        logger.error(f"Fatal error running MCP server: {str(e)}")
+        logger.error("Fatal error running MCP server (%s)", type(e).__name__)
         exit(1)

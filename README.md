@@ -134,11 +134,11 @@ To enable search, set `VALYU_API_KEY` in your environment and pass it to the con
 docker run --rm -i -e VALYU_API_KEY valyu-mcp
 ```
 
-The server can start and respond to MCP initialization and tool-discovery requests without an API key. Search remains disabled until a key is configured; this permits deployment evaluators to inspect the server without making billable requests.
+The server can start and respond to MCP initialization and tool-discovery requests without an API key. Search remains disabled until a key is configured; this permits deployment evaluators to inspect the server without making billable requests. Missing credentials and failed API responses produce MCP tool errors, not successful empty search results. Successful searches with no matches return `No results found.`
 
 For the [Glama listing](https://glama.ai/mcp/servers/valyuAI/valyu-mcp/admin), the accounts named in `glama.json` can sign in with GitHub and claim the listing after the configuration has been merged and synced. Upload this Dockerfile in Glama's build configuration and request a build and evaluation. If searches are needed, configure `VALYU_API_KEY` through the deployment's secret settings, never in the Dockerfile or build arguments.
 
-Run the credential-free startup and mocked SDK compatibility tests:
+Run the regression tests for startup, MCP tool errors, SDK requests with mocked HTTP, result formatting, result-count limits, and non-blocking execution:
 
 ```bash
 python -m unittest -v test_glama_startup
