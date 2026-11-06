@@ -18,7 +18,8 @@ const version = /^pnpm@(\d+\.\d+\.\d+)(?:\+|$)/.exec(pin)?.[1];
 if (!version) throw new Error(`package.json packageManager is not an exact pnpm pin: ${pin}`);
 
 const lockfile = readFileSync("pnpm-lock.yaml", "utf8");
-const entry = new RegExp(`\\n  pnpm@${version.replace(/\./g, "\\.")}:\\n    resolution: \\{integrity: (sha512-[A-Za-z0-9+/=]+)\\}`);
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const entry = new RegExp(`\\n  pnpm@${escapeRegExp(version)}:\\n    resolution: \\{integrity: (sha512-[A-Za-z0-9+/=]+)\\}`);
 const expected = entry.exec(lockfile)?.[1];
 if (!expected) throw new Error(`pnpm-lock.yaml records no integrity for pnpm@${version}`);
 
