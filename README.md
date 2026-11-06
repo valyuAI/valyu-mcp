@@ -43,7 +43,9 @@ stated in the tool description and echoed when a task starts.
 
 ## Run it
 
-Requires Node.js 22 and pnpm.
+Requires Node.js 22.18 or later (26 LTS recommended) and pnpm 12. Install pnpm with
+`npm install --global pnpm@12.17.0`, or through corepack 0.36 or later; the corepack bundled with
+Node 22 cannot launch pnpm 12.
 
 ```bash
 git clone https://github.com/valyuAI/valyu-mcp.git
@@ -79,8 +81,8 @@ Claude Code:
 claude mcp add valyu --env VALYU_API_KEY=your-key -- pnpm --silent --dir /absolute/path/to/valyu-mcp stdio
 ```
 
-Keep `--silent`: without it pnpm prints its script banner to stdout, which the client reads as
-protocol and rejects. Desktop apps launch with a minimal `PATH`, so if the client reports
+`--silent` keeps pnpm's own messages off stdout, which the client reads as protocol (older pnpm
+versions print a script banner there). Desktop apps launch with a minimal `PATH`, so if the client reports
 `spawn pnpm ENOENT`, set `command` to the absolute path from `which pnpm`.
 
 ### Docker (stdio)
@@ -178,6 +180,13 @@ lib/tools/                 the six tools
 lib/valyu/                 API client, dataset catalogue, plan awareness
 scripts/                   tests
 ```
+
+## Security
+
+Installs are restricted by a supply-chain policy in `pnpm-workspace.yaml`: no version younger
+than 7 days, no drop in a package's trust evidence, no dependency install scripts, and no git or
+tarball sub-dependencies. CI pins every action to a commit SHA. See [SECURITY.md](SECURITY.md),
+which also covers reporting a vulnerability.
 
 ## Earlier versions
 

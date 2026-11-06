@@ -12,35 +12,28 @@
     "stdio": "tsx stdio.ts",
     "typecheck": "tsc --noEmit",
     "test": "pnpm test:format && pnpm test:length && pnpm test:research && pnpm test:entitlements && pnpm test:stdio",
-    "test:format": "node --experimental-default-type=module --experimental-strip-types --test scripts/test-format.mjs",
-    "test:length": "node --experimental-default-type=module --experimental-strip-types --test scripts/test-response-length.mjs",
-    "test:research": "node --experimental-default-type=module --experimental-strip-types --test scripts/test-deepresearch.mjs",
+    "test:format": "node --test scripts/test-format.mjs",
+    "test:length": "node --test scripts/test-response-length.mjs",
+    "test:research": "node --test scripts/test-deepresearch.mjs",
     "test:entitlements": "node scripts/test-entitlements.mjs",
     "test:stdio": "node --test scripts/test-stdio.mjs",
     "test:protocol": "node scripts/test-protocol.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
-    "next": "15.5.29",
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "tsx": "4.23.15",
     "zod": "3.25.76"
   },
   "devDependencies": {
-    "@types/node": "22.20.1",
-    "@types/react": "19.2.17",
-    "typescript": "5.9.3"
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "typescript": "6.0.3"
   },
-  "pnpm": {
-    "overrides": {
-      "next>postcss": "8.5.28",
-      "source-map-js": "1.2.2",
-      "proxy-addr": "2.0.8",
-      "ip-address": "10.7.4",
-      "body-parser": "2.4.0",
-      "fast-uri": "3.1.9",
-      "@hono/node-server": "2.1.3",
-      "qs": "6.16.1"
-    }
-  },
-  "packageManager": "pnpm@8.15.7+sha512.c85cd21b6da10332156b1ca2aa79c0a61ee7ad2eb0453b88ab299289e9e8ca93e6091232b25c07cbf61f6df77128d9c849e5c9ac6e44854dbd211c49f3a67adc"
+  "packageManager": "pnpm@12.17.0+sha512.b8d223ebec04b580a89ed206daa71d1bccb6a1ee1d52efa95cc3b0db75271561df8f0d8e2c43add39c5ec08018af7a8a95108e7090f95a29f88727b7a40fd53d",
+  "engines": {
+    "node": ">=22.18"
+  }
 }

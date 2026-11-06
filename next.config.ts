@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Do not write agent instruction files into the project during `next dev`.
+  agentRules: false,
+
   // Lets the entitlement test run a second dev server against a mock upstream
   // without sharing `.next` with a running `pnpm dev`.
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),

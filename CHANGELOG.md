@@ -30,6 +30,16 @@ six tools, with the same input schemas and descriptions, runnable locally or on 
 - API key authentication only: `Authorization: Bearer`, `X-API-Key`, or `?valyuApiKey=`. The
   stdio entry point reads `VALYU_API_KEY`.
 - Request bodies over 4 MiB are refused before they are parsed.
+- Built on Node.js 26 LTS (22.18 or later supported), Next.js 16, TypeScript 6 and pnpm 12.
+
+### Security
+
+- A supply-chain policy for installs (`pnpm-workspace.yaml`): no version younger than 7 days, no
+  drop in trust evidence, no dependency install scripts, no git or tarball sub-dependencies.
+- CI pins actions to commit SHAs with no default token permissions, verifies the pnpm tarball
+  against the lockfile, lints workflows with zizmor and audits at every severity.
+- The Docker base image is pinned by digest. Dependabot runs with a 7-day cooldown. See
+  `SECURITY.md`.
 
 ### Removed
 

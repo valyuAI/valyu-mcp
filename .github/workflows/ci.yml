@@ -2,12 +2,12 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, closed]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
-permissions:
-  contents: read
+# Nothing by default; each job asks for exactly what it needs.
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
@@ -15,21 +15,29 @@ concurrency:
 
 jobs:
   check:
-    if: github.event.action != 'closed'
     # Public repository: GitHub-hosted runners are free.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      # Actions are pinned to full commit SHAs; a tag can be moved, a SHA cannot.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm audit --prod --audit-level critical
+          node-version: 26.13.0
+      # No dependency cache: a poisoned cache is an injection path, and a
+      # clean install takes seconds.
+      - name: Install pnpm (verified against the integrity hash in pnpm-lock.yaml)
+        run: node scripts/install-pnpm.mjs # zizmor: ignore[adhoc-packages] the tarball is hash-checked against the lockfile before install
+      - name: Install dependencies (frozen lockfile, supply-chain policy in pnpm-workspace.yaml)
+        run: pnpm install --frozen-lockfile
+      - name: Lint workflows
+        run: pipx run zizmor==1.31.1 --persona=auditor --min-severity=low .github/workflows
+      - run: pnpm audit --audit-level low
       - run: pnpm typecheck
       - run: pnpm build
       - name: Offline tests (mock upstream, no API key)
