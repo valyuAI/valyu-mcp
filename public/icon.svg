@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 375 375" role="img" aria-label="Valyu">
+  <title>Valyu</title>
+  <style>
+    .valyu-mark { fill: #1e1d1d; }
+    @media (prefers-color-scheme: dark) {
+      .valyu-mark { fill: #ffffff; }
+    }
+  </style>
+  <g class="valyu-mark" transform="translate(-54.310154, 360.420005)">
+    <path d="M 216.3125 7.75 L 267.625 7.75 L 409.890625 -319.875 L 409.890625 -346.984375 L 73.078125 -346.984375 L 73.078125 -319.875 Z M 288.421875 -146.15625 L 242.453125 -31.9375 L 240.03125 -31.9375 L 193.578125 -146.15625 L 124.375 -308.75 L 358.109375 -308.75 Z M 288.421875 -146.15625 "/>
+  </g>
+</svg>
