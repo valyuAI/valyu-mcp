@@ -1,0 +1,31 @@
+# Version updates wait 7 days after a release, matching minimumReleaseAge in
+# pnpm-workspace.yaml (a shorter cooldown opens PRs that pnpm then refuses).
+# Security updates are not delayed by Dependabot; see SECURITY.md for the
+# pnpm side of an urgent fix.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      npm:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

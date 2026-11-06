@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+# Nothing by default; each job asks for exactly what it needs.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # Public repository: GitHub-hosted runners are free.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # Actions are pinned to full commit SHAs; a tag can be moved, a SHA cannot.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.0
+      # No dependency cache: a poisoned cache is an injection path, and a
+      # clean install takes seconds.
+      - name: Install pnpm (verified against the integrity hash in pnpm-lock.yaml)
+        run: node scripts/install-pnpm.mjs # zizmor: ignore[adhoc-packages] the tarball is hash-checked against the lockfile before install
+      - name: Install dependencies (frozen lockfile, supply-chain policy in pnpm-workspace.yaml)
+        run: pnpm install --frozen-lockfile
+      - name: Lint workflows
+        run: pipx run zizmor==1.31.1 --persona=auditor --min-severity=low .github/workflows
+      - run: pnpm audit --audit-level low
+      - run: pnpm typecheck
+      - run: pnpm build
+      - name: Offline tests (mock upstream, no API key)
+        timeout-minutes: 8
+        run: pnpm test
+      - name: Docker image starts and lists tools over stdio without a key
+        timeout-minutes: 5
+        run: |
+          docker build -t valyu-mcp:ci .
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            | timeout 60 docker run --rm -i --network none valyu-mcp:ci > out.jsonl
+          python3 - <<'PY'
+          import json
+          msgs = [json.loads(line) for line in open("out.jsonl") if line.strip()]
+          tools = sorted(t["name"] for m in msgs if m.get("id") == 2 for t in m["result"]["tools"])
+          assert len(tools) == 6, tools
+          print("tools:", ", ".join(tools))
+          PY

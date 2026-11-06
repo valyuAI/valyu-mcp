@@ -1,0 +1,29 @@
+# Supply-chain policy for installs. See SECURITY.md for the reasoning.
+
+# Refuse any version, direct or transitive, published less than 7 days ago.
+# Compromised releases are usually caught and pulled within hours to days.
+minimumReleaseAge: 10080
+
+# Fail if a package's trust evidence drops versus earlier releases, e.g. a
+# package published via trusted publishing suddenly ships without provenance.
+trustPolicy: no-downgrade
+
+# Transitive dependencies may only come from the registry: no git or tarball URLs.
+blockExoticSubdeps: true
+
+# No dependency lifecycle scripts run unless listed below; an unreviewed one
+# fails the install.
+strictDepBuilds: true
+allowBuilds:
+  # Its postinstall only verifies the platform binary, which arrives as an
+  # optional dependency. tsx runs without it.
+  esbuild: false
+
+auditConfig:
+  ignoreGhsas:
+    # zod < 4.6.6: memory use while validating oversized arrays. zod 4 changes
+    # the published tool schemas, and measured on 4.6.7 it still allocates per
+    # element for unconstrained arrays, so upgrading would not close it. Bodies
+    # are capped at 4 MiB before parsing (lib/mcp/serve.ts). Revisit on a fix
+    # that covers unconstrained arrays.
+    - GHSA-mrhx-c7xc-m3w5

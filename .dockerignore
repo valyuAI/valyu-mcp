@@ -1,0 +1,10 @@
+.git
+.github
+.next
+.next-test
+node_modules
+.env*
+*.pem
+*.key
+credentials.*
+secrets.*

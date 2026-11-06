@@ -1,0 +1,39 @@
+{
+  "name": "valyu-mcp",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Self-hostable Model Context Protocol server for Valyu search, content extraction and DeepResearch.",
+  "license": "MIT",
+  "repository": "github:valyuAI/valyu-mcp",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "stdio": "tsx stdio.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm test:format && pnpm test:length && pnpm test:research && pnpm test:entitlements && pnpm test:stdio",
+    "test:format": "node --test scripts/test-format.mjs",
+    "test:length": "node --test scripts/test-response-length.mjs",
+    "test:research": "node --test scripts/test-deepresearch.mjs",
+    "test:entitlements": "node scripts/test-entitlements.mjs",
+    "test:stdio": "node --test scripts/test-stdio.mjs",
+    "test:protocol": "node scripts/test-protocol.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tsx": "4.23.15",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "typescript": "6.0.3"
+  },
+  "packageManager": "pnpm@12.17.0+sha512.b8d223ebec04b580a89ed206daa71d1bccb6a1ee1d52efa95cc3b0db75271561df8f0d8e2c43add39c5ec08018af7a8a95108e7090f95a29f88727b7a40fd53d",
+  "engines": {
+    "node": ">=22.18"
+  }
+}

@@ -1,7 +1,21 @@
-venv/
-.venv/
-pyvenv.cfg
-__pycache__/
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/.next-test/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# env and credentials
+.env*
+*.pem
+*.key
+credentials.*
+secrets.*
+
+# misc
 .DS_Store
-.env
-test.py
+.vercel
+npm-debug.log*
