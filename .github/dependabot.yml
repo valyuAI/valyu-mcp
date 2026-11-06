@@ -11,6 +11,16 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
+    ignore:
+      # zod 4 changes the generated tool schemas (nested descriptions are
+      # dropped, additionalProperties and maximum change), which must match
+      # the hosted endpoint. See auditConfig in pnpm-workspace.yaml.
+      - dependency-name: zod
+        versions: [">=4"]
+      # TypeScript 7 has no classic JS API, which next build and the test
+      # loader (scripts/test-support.mjs) depend on.
+      - dependency-name: typescript
+        versions: [">=7"]
     groups:
       npm:
         patterns: ["*"]
