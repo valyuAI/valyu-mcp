@@ -1031,8 +1031,10 @@ function renderEditApiError(err: unknown, context: string): ToolError {
   if (code === "focus.ambiguous") {
     recordToolFailure(err, context);
     const options = (err.candidates ?? []).slice(0, 10).map((c) => {
-      const str = (v: unknown) => (typeof v === "string" ? v : "");
-      return `- section "${str(c.section) || "(none)"}": ...${str(c.prefix)}[passage]${str(c.suffix)}...`;
+      const str = (v: unknown, max = 80) =>
+        typeof v === "string" ? v.replace(/\s+/g, " ").slice(-max) : "";
+      const after = typeof c.suffix === "string" ? c.suffix.replace(/\s+/g, " ").slice(0, 80) : "";
+      return `- section "${str(c.section, 120) || "(none)"}": ...${str(c.prefix)}[passage]${after}...`;
     });
     return toolError(
       `${context} failed (focus.ambiguous): the \`text\` matches more than one place in the report, so nothing was changed.\n` +
@@ -1144,6 +1146,12 @@ function renderEditRecord(
     );
   }
 
+  if (!r.edit_id) {
+    return text(
+      `The edit was accepted and is still running, but no edit_id came back. ` +
+        `Check valyu_deepresearch_status(task_id) later for the new version; do not submit the instruction again.`,
+    );
+  }
   return text(
     `Edit still running after ${waitedSeconds}s (edit_id \`${r.edit_id}\`). ` +
       `Check it later with valyu_deepresearch_edit {"task_id": "${taskId}", "edit_id": "${r.edit_id}"}; ` +
@@ -1244,9 +1252,12 @@ The call waits up to \`wait_seconds\` (default 30) and returns the summary, the 
           "Pass an `instruction` to start an edit, or the `edit_id` of an edit that was still running.",
         );
       }
-      if (args.edit_id && args.instruction) {
+      if (
+        args.edit_id &&
+        (args.instruction || args.section || args.text || args.deliverable_id || args.base_version)
+      ) {
         return toolError(
-          "Pass either `instruction` (a new edit) or `edit_id` (check an earlier one), not both.",
+          "`edit_id` checks an earlier edit and takes only `task_id` and `wait_seconds`. To start a new edit, pass `instruction` without `edit_id`.",
         );
       }
       if (args.deliverable_id && (args.section || args.text)) {
@@ -1266,18 +1277,18 @@ The call waits up to \`wait_seconds\` (default 30) and returns the summary, the 
           return renderEditApiError(err, context);
         }
       } else {
-        const focus =
-          args.section || args.text
-            ? { section: args.section, text: args.text }
-            : undefined;
         const params: DeepResearchEditParams = {
           instruction: args.instruction!,
           target: args.deliverable_id
             ? { kind: "deliverable", deliverable_id: args.deliverable_id }
             : undefined,
-          focus: focus && (Object.fromEntries(
-            Object.entries(focus).filter(([, v]) => v !== undefined),
-          ) as DeepResearchEditParams["focus"]),
+          focus:
+            args.section || args.text
+              ? {
+                  ...(args.section && { section: args.section }),
+                  ...(args.text && { text: args.text }),
+                }
+              : undefined,
           base_version: args.base_version,
           wait_seconds: Math.min(EDIT_INLINE_WAIT_SECONDS, args.wait_seconds),
         };
@@ -1302,8 +1313,13 @@ The call waits up to \`wait_seconds\` (default 30) and returns the summary, the 
         try {
           await pause(interval, signal);
           record = await client.researchEdit(args.task_id, record.edit_id);
-        } catch {
-          break; // return what we have; the edit_id lets the caller resume
+        } catch (err) {
+          // A definite rejection (e.g. the edit is gone) is reported; a slow
+          // or failed poll returns what we have, and the edit_id resumes it.
+          if (err instanceof ValyuApiError && err.status < 500) {
+            return renderEditApiError(err, context);
+          }
+          break;
         }
       }
 

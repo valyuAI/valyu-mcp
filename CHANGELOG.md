@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.1 - 2026-11-19
+
+### Fixed
+
+- `valyu_deepresearch_edit` reports a definite error (for example an edit that no longer exists)
+  while it waits, instead of returning the edit as still running.
+- `edit_id` checks an earlier edit and is refused alongside fields that start a new one
+  (`instruction`, `section`, `text`, `deliverable_id`, `base_version`).
+- Ambiguous-passage matches are clipped, so a long section or surrounding text stays readable.
+
 ## 2.1.0 - 2026-11-19
 
 ### Added
