@@ -266,7 +266,15 @@ export interface DeepResearchEditRecord {
   base_version?: number;
   version?: number | null;
   summary?: string | null;
-  changes?: { section?: string; description?: string; [k: string]: unknown }[];
+  changes?: {
+    section?: string;
+    description?: string;
+    /** The live API sends diff hunks: the first line changed, then the lines. */
+    line?: number;
+    removed?: string[];
+    added?: string[];
+    [k: string]: unknown;
+  }[];
   unapplied?: (string | Record<string, unknown>)[];
   warnings?: ApiWarning[];
   decline?: { code?: string; message?: string; suggestion?: string | null } | null;

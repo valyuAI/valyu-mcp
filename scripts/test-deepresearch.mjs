@@ -530,9 +530,15 @@ test("an edit sends only the fields the caller set, then waits through a 202 to 
       base_version: 1,
       version: 2,
       summary: "Cut the executive summary to 3 bullets.",
-      changes: [{ section: "Executive Summary", description: "6 bullets to 3." }],
+      // The live shape: diff hunks, plus accounting fields that must not be shown.
+      changes: [
+        { line: 12, removed: ["- one", "- two"], added: ["- Revenue grew 18%."] },
+      ],
       unapplied: [],
       warnings: [],
+      usage: { input_tokens: 200, output_tokens: 262, model: "internal-model" },
+      cost: { usd: 0.0173 },
+      latency_ms: 8329,
     },
   ]);
   const result = await h.call("valyu_deepresearch_edit", {
@@ -551,7 +557,8 @@ test("an edit sends only the fields the caller set, then waits through a 202 to 
   assert.equal(result.isError, undefined);
   assert.match(text, /now version 2 \(edited from version 1\)/);
   assert.match(text, /Summary: Cut the executive summary to 3 bullets\./);
-  assert.match(text, /- Executive Summary: 6 bullets to 3\./);
+  assert.match(text, /- line 12, now reads: - Revenue grew 18%\./);
+  assert.doesNotMatch(text, /tokens|internal-model|usd|0\.0173|8329/);
 });
 
 test("a declined edit reports its code and suggestion and says nothing changed", async (t) => {

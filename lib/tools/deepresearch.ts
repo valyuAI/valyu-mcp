@@ -1064,6 +1064,27 @@ function renderEditApiError(err: unknown, context: string): ToolError {
   return renderApiError(err, context);
 }
 
+/**
+ * One applied change. The API sends either a described change
+ * ({section, description}) or a diff hunk ({line, removed[], added[]}); a hunk
+ * is shown as its new text, clipped, since the agent can read the full report.
+ */
+function renderChange(c: Record<string, unknown>): string {
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const described = [str(c.section), str(c.description)].filter(Boolean).join(": ");
+  if (described) return described;
+  const join = (v: unknown) =>
+    Array.isArray(v) ? v.filter((x) => typeof x === "string").join("\n") : "";
+  const clip = (t: string) =>
+    t.length > 300 ? `${t.slice(0, 300)}...` : t;
+  const added = join(c.added);
+  const removed = join(c.removed);
+  const where = typeof c.line === "number" ? `line ${c.line}` : "change";
+  if (added) return `${where}, now reads: ${clip(added.replace(/\s+/g, " "))}`;
+  if (removed) return `${where}, removed: ${clip(removed.replace(/\s+/g, " "))}`;
+  return "";
+}
+
 function renderEditRecord(
   taskId: string,
   r: DeepResearchEditRecord,
@@ -1081,11 +1102,7 @@ function renderEditRecord(
         (r.base_version ? ` (edited from version ${r.base_version}).` : "."),
     ];
     if (r.summary) lines.push("", `Summary: ${r.summary}`);
-    const changes = (r.changes ?? [])
-      .map((c) =>
-        [c.section, c.description].filter((v) => typeof v === "string" && v).join(": "),
-      )
-      .filter(Boolean);
+    const changes = (r.changes ?? []).slice(0, 10).map(renderChange).filter(Boolean);
     if (changes.length) lines.push("", "Changes:", ...changes.map((c) => `- ${c}`));
     const unapplied = (r.unapplied ?? []).map((u) =>
       typeof u === "string" ? u : JSON.stringify(u),
