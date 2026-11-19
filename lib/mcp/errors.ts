@@ -39,7 +39,7 @@ function isTimeout(err: unknown): boolean {
 
 const EXPECTED_API_STATUSES = new Set([400, 401, 402, 403, 404, 409, 422, 429]);
 
-function recordToolFailure(err: unknown, context: string): void {
+export function recordToolFailure(err: unknown, context: string): void {
   const status = err instanceof ValyuApiError ? err.status : undefined;
   const expected = status !== undefined && EXPECTED_API_STATUSES.has(status);
   const kind =

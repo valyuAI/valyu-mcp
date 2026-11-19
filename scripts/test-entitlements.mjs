@@ -420,7 +420,7 @@ await test("entitled datasets are NOT marked locked", async () => {
   assert.match(arxivLine, /COVERED/);
 });
 
-await test("tool discovery lists exactly the six public tools with no internal-only inputs", async () => {
+await test("tool discovery lists exactly the eight public tools with no internal-only inputs", async () => {
   const { payload } = await rpc("tools/list");
   const names = payload.result.tools.map((tool) => tool.name).sort();
   assert.deepEqual(names, [
@@ -428,7 +428,9 @@ await test("tool discovery lists exactly the six public tools with no internal-o
     "valyu_datasources",
     "valyu_deepresearch",
     "valyu_deepresearch_control",
+    "valyu_deepresearch_edit",
     "valyu_deepresearch_status",
+    "valyu_deepresearch_versions",
     "valyu_search",
   ]);
   for (const tool of payload.result.tools) {

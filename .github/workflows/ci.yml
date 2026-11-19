@@ -56,6 +56,6 @@ jobs:
           import json
           msgs = [json.loads(line) for line in open("out.jsonl") if line.strip()]
           tools = sorted(t["name"] for m in msgs if m.get("id") == 2 for t in m["result"]["tools"])
-          assert len(tools) == 6, tools
+          assert len(tools) == 8, tools
           print("tools:", ", ".join(tools))
           PY

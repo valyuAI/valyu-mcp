@@ -14,8 +14,11 @@ import type {
   DatasourcesResponse,
   DeepResearchCreateParams,
   DeepResearchCreateResponse,
+  DeepResearchEditParams,
+  DeepResearchEditRecord,
   DeepResearchListItem,
   DeepResearchStatusResponse,
+  DeepResearchVersionList,
   SearchParams,
   SearchResponse,
 } from "./types";
@@ -74,6 +77,8 @@ export class ValyuApiError extends Error {
     readonly upgradeUrl?: string,
     /** Sales contact link, sent on a 429 instead of upgradeUrl where applicable. */
     readonly contactUrl?: string,
+    /** Report edits: the matching passages when a focus is ambiguous (422). */
+    readonly candidates?: Record<string, unknown>[],
   ) {
     super(`Valyu API ${status}: ${body.slice(0, 400)}`);
     this.name = "ValyuApiError";
@@ -98,6 +103,7 @@ export class ValyuApiError extends Error {
     let limit: { endpoint?: string; requests_per_second?: number } | undefined;
     let upgradeUrl: string | undefined;
     let contactUrl: string | undefined;
+    let candidates: Record<string, unknown>[] | undefined;
     try {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       // On a 429 `error` is a machine code ("rate_limited"), not display text -
@@ -136,6 +142,11 @@ export class ValyuApiError extends Error {
           availableDatasets: strList(r.available_datasets),
         };
       }
+      if (Array.isArray(parsed.candidates)) {
+        candidates = parsed.candidates.filter(
+          (c): c is Record<string, unknown> => !!c && typeof c === "object",
+        );
+      }
       if (res.status === 429) {
         retryAfter = typeof parsed.retry_after === "number" ? parsed.retry_after : undefined;
         plan = typeof parsed.plan === "string" ? parsed.plan : undefined;
@@ -173,6 +184,7 @@ export class ValyuApiError extends Error {
       limit,
       upgradeUrl,
       contactUrl,
+      candidates,
     );
   }
 }
@@ -302,9 +314,49 @@ export class ValyuClient {
     });
   }
 
-  researchStatus(taskId: string): Promise<DeepResearchStatusResponse> {
+  researchStatus(
+    taskId: string,
+    version?: number,
+  ): Promise<DeepResearchStatusResponse> {
+    const qs = version === undefined ? "" : `?version=${version}`;
     return this.call<DeepResearchStatusResponse>(
-      `/v1/deepresearch/tasks/${encodeURIComponent(taskId)}/status`,
+      `/v1/deepresearch/tasks/${encodeURIComponent(taskId)}/status${qs}`,
+      { method: "GET" },
+    );
+  }
+
+  /** Start an edit of a completed report; waits up to `wait_seconds` inline. */
+  editResearch(
+    taskId: string,
+    params: DeepResearchEditParams,
+  ): Promise<DeepResearchEditRecord> {
+    return this.call<DeepResearchEditRecord>(
+      `/v1/deepresearch/tasks/${encodeURIComponent(taskId)}/edit`,
+      { method: "POST", body: compact(params) },
+    );
+  }
+
+  researchEdit(taskId: string, editId: string): Promise<DeepResearchEditRecord> {
+    return this.call<DeepResearchEditRecord>(
+      `/v1/deepresearch/tasks/${encodeURIComponent(taskId)}/edits/${encodeURIComponent(editId)}`,
+      { method: "GET" },
+    );
+  }
+
+  /** Make an earlier version current again; adds a new head version. */
+  restoreResearchVersion(
+    taskId: string,
+    version: number,
+  ): Promise<{ version?: number; restored_from?: number }> {
+    return this.call(
+      `/v1/deepresearch/tasks/${encodeURIComponent(taskId)}/versions/${version}/restore`,
+      { method: "POST" },
+    );
+  }
+
+  researchVersions(taskId: string): Promise<DeepResearchVersionList> {
+    return this.call<DeepResearchVersionList>(
+      `/v1/deepresearch/tasks/${encodeURIComponent(taskId)}/versions`,
       { method: "GET" },
     );
   }

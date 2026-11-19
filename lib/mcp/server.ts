@@ -1,6 +1,6 @@
 /**
  * The server definition shared by the HTTP endpoint and the stdio entry point:
- * identity, instructions for the model, and the six tools.
+ * identity, instructions for the model, and the eight tools.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -28,7 +28,7 @@ Search configuration:
 3. Publication-date filters restrict document dates. A forecast year, trial identifier or historical year in the query is not automatically a publication-date restriction. "Latest" usually calls for checking the dates of returned sources rather than assuming a fixed date window.
 4. If a search is empty or incomplete, explain the limitation. Adjust the query or scope only in a way consistent with the user's request.
 
-DeepResearch runs asynchronously and incurs a charge. Start valyu_deepresearch when the user explicitly asks for deep research or an exhaustive investigation and accepts its cost and duration. An explicit request to run deep research already authorises starting it. For ordinary summaries or briefs, search and read the necessary sources. Check progress and retrieve the report with valyu_deepresearch_status. Use valyu_deepresearch_control only for the specific action the user requests. Reports and generated files can contain errors: verify decision-critical facts, numerical claims and citations before relying on them, and disclose unresolved discrepancies.`;
+DeepResearch runs asynchronously and incurs a charge. Start valyu_deepresearch when the user explicitly asks for deep research or an exhaustive investigation and accepts its cost and duration. An explicit request to run deep research already authorises starting it. For ordinary summaries or briefs, search and read the necessary sources. Check progress and retrieve the report with valyu_deepresearch_status. To change a finished report (fix a figure, tighten a section, change tone, add a cited point from the sources the task gathered), use valyu_deepresearch_edit instead of starting new research; valyu_deepresearch_versions lists earlier versions. Use valyu_deepresearch_control only for the specific action the user requests. Reports and generated files can contain errors: verify decision-critical facts, numerical claims and citations before relying on them, and disclose unresolved discrepancies.`;
 
 /** Register every public tool against one caller's credential. */
 export function registerTools(server: McpServer, ctx: RequestContext): void {

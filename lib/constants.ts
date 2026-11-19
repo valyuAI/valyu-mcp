@@ -1,5 +1,5 @@
 export const SDK_NAME = "valyu-mcp";
-export const SDK_VERSION = "2.0.0";
+export const SDK_VERSION = "2.1.0";
 
 /** Display name for the connector. `SDK_NAME` is a slug and reads as one. */
 export const SERVER_TITLE = "Valyu";
