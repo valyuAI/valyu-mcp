@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.1.0 - 2026-11-19
+
+### Added
+
+- **DeepResearch report editing**: `valyu_deepresearch_edit`. Make small, targeted edits to a
+  finished DeepResearch report or deliverable with a plain-language instruction. Untouched text
+  stays exactly as it was, citations stay consistent, and every edit creates a new version you
+  can restore. Scope an edit to a section or an exact passage, or target one deliverable file.
+  The tool waits for the result and returns the summary, the changes and the new version, or the
+  reason an edit was declined.
+- `valyu_deepresearch_versions` lists a task's version history, and `valyu_deepresearch_control`
+  gains action `restore` to make an earlier version current again (as a new version).
+- `valyu_deepresearch_status` takes an optional `version` to read an earlier version of a report.
+
+### Security
+
+- Next.js 16.4.5, and hono 4.13.18 with @hono/node-server 2.1.8 through the MCP SDK, for
+  published advisories in the versions they replace.
+
 ## 2.0.0 - 2026-11-06
 
 A rewrite. The server now matches the hosted endpoint at `https://mcp.valyu.ai/mcp`: the same

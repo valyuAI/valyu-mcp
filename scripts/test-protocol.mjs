@@ -13,7 +13,9 @@ const currentTools = [
   "valyu_datasources",
   "valyu_deepresearch",
   "valyu_deepresearch_control",
+  "valyu_deepresearch_edit",
   "valyu_deepresearch_status",
+  "valyu_deepresearch_versions",
   "valyu_search",
 ];
 let failures = 0;
@@ -123,7 +125,7 @@ await check(
   },
 );
 await check(
-  "tool discovery exposes six correctly annotated tools and no internal-only fields",
+  "tool discovery exposes eight correctly annotated tools and no internal-only fields",
   async () => {
     const { payload } = await rpc("tools/list");
     assert.deepEqual(
@@ -134,7 +136,11 @@ await check(
       assert.ok(tool.annotations?.title);
       assert.equal(
         tool.annotations.readOnlyHint,
-        !["valyu_deepresearch", "valyu_deepresearch_control"].includes(
+        ![
+          "valyu_deepresearch",
+          "valyu_deepresearch_control",
+          "valyu_deepresearch_edit",
+        ].includes(
           tool.name,
         ),
       );

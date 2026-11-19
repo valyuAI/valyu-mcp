@@ -3,19 +3,29 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { DEEPRESEARCH_POLL_INTERVAL_S } from "@/lib/constants";
 import { ValyuApiError, ValyuClient } from "@/lib/valyu/client";
-import { renderApiError, toolError } from "@/lib/mcp/errors";
+import {
+  recordToolFailure,
+  renderApiError,
+  toolError,
+  type ToolError,
+} from "@/lib/mcp/errors";
 import { renderWarnings } from "@/lib/mcp/format";
 import { validateSourceBiases } from "@/lib/valyu/sources";
 import type { ToolDeps } from "./search";
 import type {
+  DeepResearchEditParams,
+  DeepResearchEditRecord,
   DeepResearchInteraction,
   DeepResearchListItem,
   DeepResearchStatusResponse,
+  DeepResearchVersionList,
 } from "@/lib/valyu/types";
 
 /** Research creation and status retrieval use separate tool permissions. */
 const MAX_WAIT_SECONDS = 30;
 const REQUEST_BUDGET_MS = 45_000;
+/** The edit endpoint waits inline for at most this long; the rest is polled. */
+const EDIT_INLINE_WAIT_SECONDS = 20;
 
 /** DeepResearch is billed in credits; the API reports costs in USD. */
 const CREDITS_PER_USD = 160;
@@ -156,6 +166,13 @@ function renderReport(
       : "```json\n" + JSON.stringify(s.output ?? null, null, 2) + "\n```";
 
   const parts: string[] = [];
+  // An earlier version must never be mistaken for the current report.
+  if (s.is_latest === false && typeof s.version === "number") {
+    parts.push(
+      `(Version ${s.version} of this report, not the current version. Omit \`version\` to read the current one.)`,
+      "",
+    );
+  }
   // The report body usually opens with its own H1; only add the task title
   // when it does not, otherwise the heading appears twice.
   if (
@@ -179,12 +196,13 @@ function renderReport(
   if (typeof s.pdf_url === "string" && s.pdf_url)
     files.push(`- PDF: ${s.pdf_url}`);
   for (const d of s.deliverables ?? []) {
+    // The id is what valyu_deepresearch_edit takes as `deliverable_id`.
+    const label = `${d.type ?? "file"} ${d.title ?? ""}${d.id ? ` (id ${d.id})` : ""}`;
     if (d.url)
       files.push(
-        `- ${d.type ?? "file"} ${d.title ?? ""}: ${d.url}${d.status && d.status !== "completed" ? ` (${d.status})` : ""}`,
+        `- ${label}: ${d.url}${d.status && d.status !== "completed" ? ` (${d.status})` : ""}`,
       );
-    else if (d.status === "failed")
-      files.push(`- ${d.type ?? "file"} ${d.title ?? ""}: generation failed`);
+    else if (d.status === "failed") files.push(`- ${label}: generation failed`);
   }
   for (const img of s.images ?? []) {
     if (img.image_url)
@@ -196,6 +214,23 @@ function renderReport(
 
   const warnings = renderWarnings(s.warnings);
   if (warnings) parts.push("", warnings);
+
+  const versionLines: string[] = [];
+  if (s.is_latest !== false && typeof s.version === "number" && s.version > 1) {
+    versionLines.push(
+      `Version ${s.version}${s.revised_at ? `, last revised ${s.revised_at}` : ""}. List earlier versions with valyu_deepresearch_versions.`,
+    );
+  }
+  if (s.active_edit?.edit_id) {
+    versionLines.push(
+      `An edit is running on this report (edit_id \`${s.active_edit.edit_id}\`); this text is from before it. Check it with valyu_deepresearch_edit and that edit_id.`,
+    );
+  } else if (s.editable && s.is_latest !== false) {
+    versionLines.push(
+      "This report can be refined with valyu_deepresearch_edit instead of new research.",
+    );
+  }
+  if (versionLines.length) parts.push("", ...versionLines);
 
   const cost = typeof s.cost === "number" ? s.cost : undefined;
   if (cost !== undefined) {
@@ -221,6 +256,8 @@ export function registerDeepResearchTools(
   registerStartTool(server, deps);
   registerStatusTool(server, deps);
   registerControlTool(server, deps);
+  registerEditTool(server, deps);
+  registerVersionsTool(server, deps);
 }
 
 /** Start a task, with an optional bounded inline wait for it to finish. */
@@ -692,6 +729,14 @@ The default returns the current state without waiting. An optional wait of up to
         .describe(
           "Include the citation list with deep links into each source (completed tasks only).",
         ),
+      version: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(
+          "Read an earlier version of an edited report (see valyu_deepresearch_versions). Omit for the current version.",
+        ),
     },
     {
       title: "Research status, report & list",
@@ -699,7 +744,7 @@ The default returns the current state without waiting. An optional wait of up to
       destructiveHint: false,
       openWorldHint: false,
     },
-    async ({ task_id, limit, wait_seconds, include_sources }, extra) => {
+    async ({ task_id, limit, wait_seconds, include_sources, version }, extra) => {
       const signal = requestSignal(deps.signal, extra.signal);
       const client = new ValyuClient(
         deps.ctx.apiKey,
@@ -714,7 +759,7 @@ The default returns the current state without waiting. An optional wait of up to
           };
         }
         const deadline = Date.now() + wait_seconds * 1000;
-        let s = await client.researchStatus(task_id);
+        let s = await client.researchStatus(task_id, version);
 
         while (
           !(
@@ -725,7 +770,7 @@ The default returns the current state without waiting. An optional wait of up to
           !signal.aborted
         ) {
           await pause(DEEPRESEARCH_POLL_INTERVAL_S * 1000, signal);
-          s = await client.researchStatus(task_id);
+          s = await client.researchStatus(task_id, version);
         }
 
         if (s.status === "completed") {
@@ -791,7 +836,8 @@ action "steer": send a follow-up instruction to redirect or narrow a running tas
 action "cancel": stop a queued, running or paused task. Cancellation does not imply a refund of charges already incurred.
 action "respond": answer a human-in-the-loop checkpoint (status awaiting_input / paused). valyu_deepresearch_status shows the checkpoint, its interaction_id and the exact response shape.
 action "share": turn the public share link on or off (\`public\` true/false).
-action "delete": permanently delete a finished (completed, failed or cancelled) task and its report. Irreversible - confirm with the user first.`,
+action "delete": permanently delete a finished (completed, failed or cancelled) task and its report. Irreversible - confirm with the user first.
+action "restore": make an earlier \`version\` of an edited report current again (see valyu_deepresearch_versions). It adds a new version; nothing is lost.`,
     {
       task_id: z
         .string()
@@ -800,9 +846,9 @@ action "delete": permanently delete a finished (completed, failed or cancelled) 
           "The task id returned by valyu_deepresearch (or listed by valyu_deepresearch_status).",
         ),
       action: z
-        .enum(["steer", "cancel", "respond", "share", "delete"])
+        .enum(["steer", "cancel", "respond", "share", "delete", "restore"])
         .describe(
-          '"steer", "cancel", "respond", "share" or "delete" - see the tool description.',
+          '"steer", "cancel", "respond", "share", "delete" or "restore" - see the tool description.',
         ),
       instruction: z
         .string()
@@ -831,9 +877,17 @@ action "delete": permanently delete a finished (completed, failed or cancelled) 
         .describe(
           'Required when action is "share": true publishes a share link, false removes it.',
         ),
+      version: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(
+          'Required when action is "restore": the version number to make current.',
+        ),
     },
     {
-      title: "Steer, cancel, respond, share or delete deepresearch",
+      title: "Steer, cancel, respond, share, delete or restore deepresearch",
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: false,
@@ -850,6 +904,7 @@ action "delete": permanently delete a finished (completed, failed or cancelled) 
         interaction_id,
         response,
         public: isPublic,
+        version,
       },
       extra,
     ) => {
@@ -913,9 +968,396 @@ action "delete": permanently delete a finished (completed, failed or cancelled) 
           case "delete":
             await client.deleteResearch(task_id);
             return ok(`Task \`${task_id}\` and its report have been deleted.`);
+          case "restore": {
+            if (version === undefined) {
+              return toolError(
+                'action "restore" needs `version`; call valyu_deepresearch_versions(task_id) to see the versions.',
+              );
+            }
+            const r = await client.restoreResearchVersion(task_id, version);
+            return ok(
+              `Version ${r.restored_from ?? version} of task \`${task_id}\` is current again, as version ${r.version}. Read it with valyu_deepresearch_status.`,
+            );
+          }
         }
       } catch (err) {
+        if (action === "restore") {
+          return renderEditApiError(err, "Restoring the report version");
+        }
         return renderApiError(err, `Research task action "${action}"`);
+      }
+    },
+  );
+}
+
+/** Shared by the report-edit tools. */
+const EDIT_DESCRIPTION =
+  "Make small, targeted edits to a finished DeepResearch report or deliverable with a plain-language instruction. Untouched text stays exactly as it was, citations stay consistent, and every edit creates a new version you can restore. " +
+  "Use it to refine a report you already have (fix a figure, tighten a section, change tone, add a cited point from the sources the task gathered) instead of running new research. Large rewrites are declined; start a new task for those.";
+
+/** What to do after each decline, in addition to the API's own suggestion. */
+const DECLINE_NEXT: Record<string, string> = {
+  "edit.rewrite_requested":
+    "The change is too large for an edit. Split it into smaller targeted edits, or, if the user wants a rewrite, start a new task with valyu_deepresearch.",
+  "edit.out_of_evidence":
+    "The sources this task gathered do not cover it. Tell the user; a new task with valyu_deepresearch is needed to research it.",
+  "edit.contradictory":
+    "Clarify the instruction with the user, then edit again.",
+  "edit.unsafe_instruction": "Revise the instruction before trying again.",
+  "edit.not_applicable":
+    "Check the target and focus (`deliverable_id`, `section`, `text`) match what the user meant, then edit again.",
+  "edit.no_change": "The report already does what was asked; nothing to do.",
+};
+
+/** HTTP-level edit rejections, by the API's `code`. Nothing was run. */
+const EDIT_ERRORS: Record<string, string> = {
+  "edit.invalid_request": "the request was rejected as invalid",
+  "edit.task_not_completed":
+    "the task has not completed. Only a completed report can be edited; check it with valyu_deepresearch_status",
+  "edit.in_progress":
+    "another edit is already running on this task. Wait for it to finish (valyu_deepresearch_status shows it), then retry",
+  "edit.revision_conflict":
+    "the report has changed since the `base_version` given. Read the current version with valyu_deepresearch_status, then retry against it (or omit `base_version`)",
+  "edit.unsupported_task":
+    "this task's output cannot be edited. Only markdown reports can; start a new task for a different output",
+  "focus.not_found":
+    "the `text` or `section` was not found in the report. Copy the passage exactly from the current report (valyu_deepresearch_status), or give the section heading instead",
+  "edit.busy": "the editor is busy right now. Wait a short while, then retry",
+};
+
+function renderEditApiError(err: unknown, context: string): ToolError {
+  if (!(err instanceof ValyuApiError)) return renderApiError(err, context);
+  const code = err.code;
+  if (code === "focus.ambiguous") {
+    recordToolFailure(err, context);
+    const options = (err.candidates ?? []).slice(0, 10).map((c) => {
+      const str = (v: unknown) => (typeof v === "string" ? v : "");
+      return `- section "${str(c.section) || "(none)"}": ...${str(c.prefix)}[passage]${str(c.suffix)}...`;
+    });
+    return toolError(
+      `${context} failed (focus.ambiguous): the \`text\` matches more than one place in the report, so nothing was changed.\n` +
+        (options.length ? `\nMatches:\n${options.join("\n")}\n` : "") +
+        `\nAdd the \`section\` it is in, or include more of the surrounding words in \`text\`, then retry.`,
+    );
+  }
+  if (code && EDIT_ERRORS[code]) {
+    recordToolFailure(err, context);
+    return toolError(
+      `${context} failed (${code}): ${EDIT_ERRORS[code]}.` +
+        (err.body ? `\n\nDetails: ${err.body}` : ""),
+    );
+  }
+  if (err.status === 404) {
+    recordToolFailure(err, context);
+    return toolError(
+      `${context} failed: not found - ${err.body}\n\n` +
+        `Check the task id (and edit id or version). Editing is available only for completed reports on accounts where it is enabled.`,
+    );
+  }
+  if (err.status === 403 && !/credential|api[_ -]?key|unauthor|invalid token/i.test(err.body)) {
+    recordToolFailure(err, context);
+    return toolError(
+      `${context} failed (HTTP 403): ${err.body}\n\n` +
+        `Only the account that ran the task can edit it, read its earlier versions or restore them.`,
+    );
+  }
+  return renderApiError(err, context);
+}
+
+function renderEditRecord(
+  taskId: string,
+  r: DeepResearchEditRecord,
+  waitedSeconds: number,
+): { content: { type: "text"; text: string }[]; isError?: true } {
+  const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
+  const what =
+    r.target?.kind === "deliverable"
+      ? `deliverable ${r.target.deliverable_id}`
+      : "report";
+
+  if (r.status === "applied") {
+    const lines = [
+      `Edit applied to the ${what} of task \`${taskId}\`: now version ${r.version ?? "?"}` +
+        (r.base_version ? ` (edited from version ${r.base_version}).` : "."),
+    ];
+    if (r.summary) lines.push("", `Summary: ${r.summary}`);
+    const changes = (r.changes ?? [])
+      .map((c) =>
+        [c.section, c.description].filter((v) => typeof v === "string" && v).join(": "),
+      )
+      .filter(Boolean);
+    if (changes.length) lines.push("", "Changes:", ...changes.map((c) => `- ${c}`));
+    const unapplied = (r.unapplied ?? []).map((u) =>
+      typeof u === "string" ? u : JSON.stringify(u),
+    );
+    if (unapplied.length)
+      lines.push("", "Not applied:", ...unapplied.map((u) => `- ${u}`));
+    const warnings = renderWarnings(r.warnings);
+    if (warnings) lines.push("", warnings);
+    if (r.pdf_url) lines.push("", `PDF: ${r.pdf_url}`);
+    lines.push(
+      "",
+      `Read the updated ${what === "report" ? "report" : "task"} with valyu_deepresearch_status(task_id). ` +
+        `The previous version stays available (valyu_deepresearch_versions) and can be restored.`,
+    );
+    return text(lines.join("\n"));
+  }
+
+  if (r.status === "declined") {
+    const code = r.decline?.code ?? "declined";
+    const lines = [
+      `Edit declined (${code}): ${r.decline?.message ?? r.summary ?? "no reason given"}`,
+    ];
+    if (r.decline?.suggestion) lines.push(`Suggestion: ${r.decline.suggestion}`);
+    lines.push(
+      "",
+      `No new version was created; the ${what} is unchanged.`,
+    );
+    if (DECLINE_NEXT[code]) lines.push(DECLINE_NEXT[code]);
+    return text(lines.join("\n"));
+  }
+
+  if (r.status === "failed") {
+    const e = r.error;
+    return toolError(
+      `Edit failed${e?.code ? ` (${e.code})` : ""}: ${e?.message ?? "unknown error"}\n\n` +
+        (e?.retryable
+          ? "Nothing was changed. Submit the edit again."
+          : "Nothing was changed. Tell the user; retrying the same edit is unlikely to help."),
+    );
+  }
+
+  return text(
+    `Edit still running after ${waitedSeconds}s (edit_id \`${r.edit_id}\`). ` +
+      `Check it later with valyu_deepresearch_edit {"task_id": "${taskId}", "edit_id": "${r.edit_id}"}; ` +
+      `do not submit the instruction again.`,
+  );
+}
+
+/** Edit a completed report, waiting for the result within the call's limits. */
+function registerEditTool(server: McpServer, deps: ToolDeps): void {
+  server.tool(
+    "valyu_deepresearch_edit",
+    `${EDIT_DESCRIPTION}
+
+The task must be completed. Write the instruction as the user would, e.g. "cut the executive summary to 3 bullets" or "correct the 2025 revenue figure to $4.2B". To focus the edit, pass the \`section\` heading or the exact \`text\` to change; to edit a generated file instead of the report, pass its \`deliverable_id\` (listed with the report by valyu_deepresearch_status).
+
+The call waits up to \`wait_seconds\` (default 30) and returns the summary, the changes and the new version, or why the edit was declined. If it is still running, check it later by passing its \`edit_id\` instead of an instruction. Each call with an instruction is a new edit; do not resend one that is still running.`,
+    {
+      task_id: z
+        .string()
+        .min(1)
+        .describe("The id of the completed research task."),
+      instruction: z
+        .string()
+        .trim()
+        .min(1)
+        .max(4000)
+        .optional()
+        .describe(
+          "What to change, in plain language. Required unless `edit_id` is given.",
+        ),
+      section: z
+        .string()
+        .trim()
+        .min(1)
+        .max(300)
+        .optional()
+        .describe(
+          'Heading of the section to edit, e.g. "Executive Summary". Report edits only.',
+        ),
+      text: z
+        .string()
+        .min(1)
+        .max(20_000)
+        .optional()
+        .describe(
+          "The exact passage to edit, copied from the report (a highlighted passage). Report edits only.",
+        ),
+      deliverable_id: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          'Edit this generated file (e.g. "f_01") instead of the report.',
+        ),
+      base_version: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(
+          "The version you read. If the report has changed since, the edit is refused instead of applied to newer text.",
+        ),
+      edit_id: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Check on an edit that was still running, instead of starting a new one.",
+        ),
+      wait_seconds: z.coerce
+        .number()
+        .int()
+        .min(0)
+        .max(MAX_WAIT_SECONDS)
+        .default(MAX_WAIT_SECONDS)
+        .describe(
+          "Seconds to wait for the result, from 0 to 30 (default 30).",
+        ),
+    },
+    {
+      title: "Edit a deepresearch report",
+      // Creates a new version; earlier versions stay restorable.
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    async (args, extra) => {
+      const signal = requestSignal(deps.signal, extra.signal);
+      const client = new ValyuClient(
+        deps.ctx.apiKey,
+        signal,
+        "valyu_deepresearch_edit",
+      );
+      const context = "Editing the report";
+      if (!args.edit_id && !args.instruction) {
+        return toolError(
+          "Pass an `instruction` to start an edit, or the `edit_id` of an edit that was still running.",
+        );
+      }
+      if (args.edit_id && args.instruction) {
+        return toolError(
+          "Pass either `instruction` (a new edit) or `edit_id` (check an earlier one), not both.",
+        );
+      }
+      if (args.deliverable_id && (args.section || args.text)) {
+        return toolError(
+          "`section` and `text` focus a report edit; leave them out when editing a deliverable.",
+        );
+      }
+
+      const started = Date.now();
+      const deadline = started + args.wait_seconds * 1000;
+      let record: DeepResearchEditRecord;
+
+      if (args.edit_id) {
+        try {
+          record = await client.researchEdit(args.task_id, args.edit_id);
+        } catch (err) {
+          return renderEditApiError(err, context);
+        }
+      } else {
+        const focus =
+          args.section || args.text
+            ? { section: args.section, text: args.text }
+            : undefined;
+        const params: DeepResearchEditParams = {
+          instruction: args.instruction!,
+          target: args.deliverable_id
+            ? { kind: "deliverable", deliverable_id: args.deliverable_id }
+            : undefined,
+          focus: focus && (Object.fromEntries(
+            Object.entries(focus).filter(([, v]) => v !== undefined),
+          ) as DeepResearchEditParams["focus"]),
+          base_version: args.base_version,
+          wait_seconds: Math.min(EDIT_INLINE_WAIT_SECONDS, args.wait_seconds),
+        };
+        try {
+          record = await client.editResearch(args.task_id, params);
+        } catch (err) {
+          if (!(err instanceof ValyuApiError) || err.status >= 500) {
+            recordToolFailure(err, context);
+            return toolError(
+              `${context} could not be confirmed; the edit may have started. ` +
+                `Check valyu_deepresearch_status(task_id) for an edit in progress, or valyu_deepresearch_versions, before retrying so the change is not applied twice.`,
+            );
+          }
+          return renderEditApiError(err, context);
+        }
+      }
+
+      while (record.status === "running" && record.edit_id) {
+        const interval =
+          Math.min(Math.max(record.retry_after_seconds ?? 3, 1), 10) * 1000;
+        if (Date.now() + interval >= deadline || signal.aborted) break;
+        try {
+          await pause(interval, signal);
+          record = await client.researchEdit(args.task_id, record.edit_id);
+        } catch {
+          break; // return what we have; the edit_id lets the caller resume
+        }
+      }
+
+      return renderEditRecord(
+        args.task_id,
+        record,
+        Math.round((Date.now() - started) / 1000),
+      );
+    },
+  );
+}
+
+function renderVersions(taskId: string, v: DeepResearchVersionList): string {
+  const versions = [...(v.versions ?? [])].sort((a, b) => b.version - a.version);
+  if (!versions.length) return `Task \`${taskId}\` has no versions to list.`;
+  const lines = versions.map((x) => {
+    const target =
+      x.target?.kind === "deliverable"
+        ? ` · deliverable ${x.target.deliverable_id}`
+        : "";
+    const head = [
+      `- version ${x.version}${x.is_head ? " (current)" : ""}`,
+      x.kind,
+      x.created_at,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const detail = [
+      x.instruction ? `  Instruction: ${x.instruction}` : null,
+      x.summary ? `  Summary: ${x.summary}` : null,
+      x.pdf_url ? `  PDF: ${x.pdf_url}` : null,
+    ].filter(Boolean);
+    return [head + target, ...detail].join("\n");
+  });
+  return (
+    `Task \`${taskId}\`: ${versions.length} version${versions.length === 1 ? "" : "s"}, current version ${v.head ?? "?"} (newest first).\n\n` +
+    lines.join("\n") +
+    `\n\nRead a version with valyu_deepresearch_status(task_id, version). Restore one with valyu_deepresearch_control action "restore" only when the user asks.`
+  );
+}
+
+/** List the versions an edited report has been through. */
+function registerVersionsTool(server: McpServer, deps: ToolDeps): void {
+  server.tool(
+    "valyu_deepresearch_versions",
+    `List the versions of a deepresearch report: the original, each edit made with valyu_deepresearch_edit (with its instruction and summary) and each restore, newest first, marking the current one. Use it to find an earlier version to read with valyu_deepresearch_status, or to restore when the user asks.`,
+    {
+      task_id: z
+        .string()
+        .min(1)
+        .describe("The id of the research task."),
+    },
+    {
+      title: "Deepresearch report versions",
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+    async ({ task_id }, extra) => {
+      const client = new ValyuClient(
+        deps.ctx.apiKey,
+        requestSignal(deps.signal, extra.signal),
+        "valyu_deepresearch_versions",
+      );
+      try {
+        const v = await client.researchVersions(task_id);
+        return {
+          content: [{ type: "text" as const, text: renderVersions(task_id, v) }],
+        };
+      } catch (err) {
+        return renderEditApiError(err, "Listing report versions");
       }
     },
   );

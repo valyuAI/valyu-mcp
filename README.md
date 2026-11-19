@@ -4,7 +4,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server for [Valyu](h
 search the web and specialised indexes built for knowledge work, read pages as clean markdown,
 and run DeepResearch, from Claude, ChatGPT, Cursor, Codex or any MCP client.
 
-This repository is the self-hostable server. It exposes the same six tools, with the same
+This repository is the self-hostable server. It exposes the same eight tools, with the same
 schemas, as the hosted endpoint.
 
 ## Hosted or self-hosted
@@ -27,14 +27,16 @@ the code. A self-hosted server authenticates with a Valyu API key only. Keys are
 
 ## Tools
 
-| Tool                         | What it does                                                                                  |
-| ---------------------------- | --------------------------------------------------------------------------------------------- |
-| `valyu_search`               | Search the web and specialised indexes in one call, or scope to a dataset, domain or preset   |
-| `valyu_datasources`          | The live dataset catalogue, searchable in plain language; returns the ids that scope a search |
-| `valyu_contents`             | Read one or more URLs as clean markdown, or summarise them                                    |
-| `valyu_deepresearch`         | Start a long-running DeepResearch task that writes a cited report                             |
-| `valyu_deepresearch_status`  | Check a task, collect the finished report, or list recent tasks                               |
-| `valyu_deepresearch_control` | Steer, answer a checkpoint, share, cancel or delete a task                                    |
+| Tool                          | What it does                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| `valyu_search`                | Search the web and specialised indexes in one call, or scope to a dataset, domain or preset      |
+| `valyu_datasources`           | The live dataset catalogue, searchable in plain language; returns the ids that scope a search    |
+| `valyu_contents`              | Read one or more URLs as clean markdown, or summarise them                                       |
+| `valyu_deepresearch`          | Start a long-running DeepResearch task that writes a cited report                                |
+| `valyu_deepresearch_status`   | Check a task, collect the finished report, or list recent tasks                                  |
+| `valyu_deepresearch_control`  | Steer, answer a checkpoint, share, restore a version, cancel or delete a task                    |
+| `valyu_deepresearch_edit`     | Make small, targeted edits to a finished report or deliverable with a plain-language instruction |
+| `valyu_deepresearch_versions` | List an edited report's versions, to read or restore an earlier one                              |
 
 Indexes include academic publications, SEC filings, financial and market data, clinical trials,
 biomedical databases, economic indicators, patents and legal sources. `valyu_datasources` lists
@@ -152,6 +154,17 @@ returned chunk is kept, including several chunks of one long document.
 Task options include dataset, date and country filters, supplied URLs and files, earlier
 reports, report formatting, PDF or structured output, deliverables and review checkpoints.
 
+`valyu_deepresearch_edit` makes small, targeted edits to a finished DeepResearch report or
+deliverable with a plain-language instruction. Untouched text stays exactly as it was, citations
+stay consistent, and every edit creates a new version you can restore. Use it to refine a report
+you already have (fix a figure, tighten a section, change tone, add a cited point from the sources
+the task gathered) instead of running new research. Large rewrites are declined; start a new task
+for those. Focus an edit with a `section` heading or the exact `text` to change, or pass a
+`deliverable_id` to edit a generated file. The tool waits for the result by default and returns
+the summary, the changes and the new version, or the reason the edit was declined.
+`valyu_deepresearch_versions` lists the versions, `valyu_deepresearch_status` reads one with
+`version`, and `valyu_deepresearch_control` action `restore` makes an earlier one current again.
+
 ## Development
 
 ```bash
@@ -176,7 +189,7 @@ lib/mcp/auth.ts            API key extraction and the 401 response
 lib/mcp/serve.ts           stateless Streamable HTTP
 lib/mcp/format.ts          result rendering
 lib/mcp/errors.ts          actionable errors
-lib/tools/                 the six tools
+lib/tools/                 the eight tools
 lib/valyu/                 API client, dataset catalogue, plan awareness
 scripts/                   tests
 ```

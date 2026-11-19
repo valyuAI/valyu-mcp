@@ -502,3 +502,122 @@ test("a fetch timeout is reported as a timeout, not an unexpected error", () => 
     assert.doesNotMatch(text, /aborted due to timeout/, err.name);
   }
 });
+
+const json = (body, status) => () =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+
+test("an edit sends only the fields the caller set, then waits through a 202 to the applied version", async (t) => {
+  // The edit endpoint rejects unknown or empty fields, so an inert key would
+  // fail every edit; and a 202 must be followed, not reported as done.
+  const h = harness(t, [
+    json(
+      {
+        edit_id: "edit_1",
+        status: "running",
+        target: { kind: "report" },
+        base_version: 1,
+        retry_after_seconds: 0,
+      },
+      202,
+    ),
+    {
+      edit_id: "edit_1",
+      status: "applied",
+      target: { kind: "report" },
+      base_version: 1,
+      version: 2,
+      summary: "Cut the executive summary to 3 bullets.",
+      changes: [{ section: "Executive Summary", description: "6 bullets to 3." }],
+      unapplied: [],
+      warnings: [],
+    },
+  ]);
+  const result = await h.call("valyu_deepresearch_edit", {
+    task_id: "task-123",
+    instruction: "Cut the executive summary to 3 bullets",
+    section: "Executive Summary",
+  });
+  assert.deepEqual(h.requests[0].body, {
+    instruction: "Cut the executive summary to 3 bullets",
+    focus: { section: "Executive Summary" },
+    wait_seconds: 20,
+  });
+  assert.match(h.requests[0].url, /\/v1\/deepresearch\/tasks\/task-123\/edit$/);
+  assert.match(h.requests[1].url, /\/tasks\/task-123\/edits\/edit_1$/);
+  const text = textOf(result);
+  assert.equal(result.isError, undefined);
+  assert.match(text, /now version 2 \(edited from version 1\)/);
+  assert.match(text, /Summary: Cut the executive summary to 3 bullets\./);
+  assert.match(text, /- Executive Summary: 6 bullets to 3\./);
+});
+
+test("a declined edit reports its code and suggestion and says nothing changed", async (t) => {
+  const h = harness(t, [
+    {
+      edit_id: "edit_2",
+      status: "declined",
+      target: { kind: "deliverable", deliverable_id: "f_01" },
+      decline: {
+        code: "edit.out_of_evidence",
+        message: "The gathered sources do not cover 2027 guidance.",
+        suggestion: "Start a new research task.",
+      },
+    },
+  ]);
+  const result = await h.call("valyu_deepresearch_edit", {
+    task_id: "task-123",
+    instruction: "Add 2027 guidance",
+    deliverable_id: "f_01",
+  });
+  assert.deepEqual(h.requests[0].body.target, {
+    kind: "deliverable",
+    deliverable_id: "f_01",
+  });
+  const text = textOf(result);
+  assert.match(text, /Edit declined \(edit\.out_of_evidence\)/);
+  assert.match(text, /Suggestion: Start a new research task\./);
+  assert.match(text, /deliverable f_01 is unchanged/);
+  assert.match(text, /valyu_deepresearch\b/);
+});
+
+test("an ambiguous focus surfaces the API's code and candidate passages without retrying", async (t) => {
+  const h = harness(t, [
+    json(
+      {
+        error: "Focus text matches 2 places.",
+        code: "focus.ambiguous",
+        candidates: [
+          { section: "Outlook", prefix: "In FY2026 ", suffix: " overall." },
+          { section: "Risks", prefix: "By contrast ", suffix: " remains." },
+        ],
+      },
+      422,
+    ),
+  ]);
+  const result = await h.call("valyu_deepresearch_edit", {
+    task_id: "task-123",
+    instruction: "Soften this claim",
+    text: "margins expand",
+  });
+  const text = textOf(result);
+  assert.equal(result.isError, true);
+  assert.match(text, /focus\.ambiguous/);
+  assert.match(text, /section "Outlook"/);
+  assert.match(text, /section "Risks"/);
+  assert.equal(h.requests.length, 1);
+});
+
+test("reading an earlier version asks for it and labels it as not current", async (t) => {
+  const h = harness(t, [
+    { status: "completed", output: "# Report v1", version: 1, is_latest: false },
+  ]);
+  const result = await h.call("valyu_deepresearch_status", {
+    task_id: "task-123",
+    version: 1,
+  });
+  assert.match(h.requests[0].url, /\/tasks\/task-123\/status\?version=1$/);
+  assert.match(textOf(result), /^\(Version 1 of this report, not the current version/);
+});

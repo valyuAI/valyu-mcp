@@ -225,13 +225,73 @@ export interface DeepResearchStatusResponse {
   cost_breakdown?: Record<string, number>;
   output_type?: "markdown" | "json" | "toon" | string;
   pdf_url?: string;
-  deliverables?: { title?: string; type?: string; status?: string; url?: string; description?: string }[];
+  deliverables?: { id?: string; title?: string; type?: string; status?: string; url?: string; description?: string }[];
   images?: { title?: string; image_type?: string; image_url?: string; description?: string }[];
   total_deduction_dollars?: number;
   hitl?: unknown;
   interaction?: DeepResearchInteraction;
   warnings?: ApiWarning[];
+  /** Completed markdown reports only: whether the report can be edited. */
+  editable?: boolean;
+  /** The head version, or the version asked for with `?version=N`. */
+  version?: number;
+  version_count?: number;
+  /** Set when reading a specific version: whether it is the head. */
+  is_latest?: boolean;
+  revised_at?: string | null;
+  active_edit?: DeepResearchEditRecord | null;
   [k: string]: unknown;
+}
+
+/** What an edit changes: the report (default) or one deliverable file. */
+export type DeepResearchEditTarget =
+  | { kind: "report" }
+  | { kind: "deliverable"; deliverable_id: string };
+
+/** POST /v1/deepresearch/tasks/{id}/edit. The API rejects unknown fields. */
+export interface DeepResearchEditParams {
+  instruction: string;
+  target?: DeepResearchEditTarget;
+  focus?: { text?: string; section?: string };
+  base_version?: number;
+  wait_seconds?: number;
+}
+
+/** The 202 body while running, and the full record once finished. */
+export interface DeepResearchEditRecord {
+  edit_id: string;
+  deepresearch_id?: string;
+  status: "running" | "applied" | "declined" | "failed" | string;
+  target?: DeepResearchEditTarget;
+  base_version?: number;
+  version?: number | null;
+  summary?: string | null;
+  changes?: { section?: string; description?: string; [k: string]: unknown }[];
+  unapplied?: (string | Record<string, unknown>)[];
+  warnings?: ApiWarning[];
+  decline?: { code?: string; message?: string; suggestion?: string | null } | null;
+  error?: { code?: string; message?: string; retryable?: boolean } | null;
+  pdf_url?: string | null;
+  retry_after_seconds?: number | null;
+  created_at?: string;
+  [k: string]: unknown;
+}
+
+/** GET /v1/deepresearch/tasks/{id}/versions. */
+export interface DeepResearchVersionList {
+  deepresearch_id?: string;
+  head?: number;
+  versions?: {
+    version: number;
+    kind?: "original" | "edit" | "restore" | string;
+    target?: DeepResearchEditTarget | null;
+    created_at?: string;
+    edit_id?: string | null;
+    instruction?: string | null;
+    summary?: string | null;
+    is_head?: boolean;
+    pdf_url?: string | null;
+  }[];
 }
 
 /**

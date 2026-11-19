@@ -1,6 +1,6 @@
 /**
  * The stdio entry point starts without a key, speaks clean JSON-RPC on stdout,
- * lists the same six tools as the HTTP endpoint, and reports a missing key as
+ * lists the same eight tools as the HTTP endpoint, and reports a missing key as
  * a tool error rather than crashing. Needs no network.
  */
 
@@ -14,7 +14,9 @@ const TOOLS = [
   "valyu_datasources",
   "valyu_deepresearch",
   "valyu_deepresearch_control",
+  "valyu_deepresearch_edit",
   "valyu_deepresearch_status",
+  "valyu_deepresearch_versions",
   "valyu_search",
 ];
 
@@ -31,7 +33,7 @@ async function connect(env) {
   return client;
 }
 
-test("starts without a key and lists the six public tools", async () => {
+test("starts without a key and lists the eight public tools", async () => {
   const client = await connect({});
   try {
     const info = client.getServerVersion();
